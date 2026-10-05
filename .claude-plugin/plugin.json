@@ -7,7 +7,7 @@
     "idleMinutes": {
       "type": "number",
       "title": "Ping after idle minutes",
-      "description": "Minutes after the last response before a keep-alive ping is sent. Keep it under the cache TTL (60 for the 1-hour cache).",
+      "description": "Minutes after the last main-thread request that read or wrote the cache before a keep-alive ping is sent (1-58; the 1-hour cache lapses 60 minutes after that request was sent).",
       "default": 55
     },
     "maxPings": {
