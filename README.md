@@ -2,11 +2,13 @@
 
 `cache-keepalive`: a Claude Code mod (function-hooks plugin) that keeps the **1-hour prompt cache** from going cold while you step away.
 
+> **Compatibility:** Claude Code mods and function hooks are early access, and their API can change between Claude Code releases. This repository was tested against **Claude Code 2.1.289**. After upgrading, load the mod once so Claude Code rewrites its type definitions in `.claude-plugin/types/`. Then re-run `claude plugin validate .` and `claude plugin test .`.
+
 ## How it works
 
 - A cache entry's 1-hour lifetime starts when the request that read or wrote it is **sent**, not when the response or the turn finishes. A 10-minute response leaves only 50 minutes. So the mod hooks `turn.step` and records when each main-thread model request is sent. It counts only requests whose response reports cache reads or writes.
 - When a main-thread turn finishes, the mod starts a countdown. It ends **55 minutes** (the default) after the turn's last request was sent.
-- If no new turn starts before then, the mod calls `$.model.fork` with a tiny "reply `ok`" prompt. The fork resends the main thread's last request exactly (same model, system prompt, tool definitions and messages) with that prompt appended. The API serves the whole prefix from the cache, and the read restarts the entry's 60-minute lifetime at no extra cost.
+- If no new turn starts before then, the mod calls `$.model.fork` with a tiny "reply `ok`" prompt. The fork resends the main thread's last request exactly (same model, system prompt, tool definitions and messages) with that prompt appended. The API serves the whole prefix from the cache, and the read restarts the entry's 60-minute lifetime without paying for another full cache write.
 - The fork is not a turn of your conversation. Its tools are declared, so the prefix matches the cache, but every tool call it attempts is denied. Its own prompt and reply are never cached. The reply goes only to the mod, which discards it.
 - Each successful ping restarts the countdown from when the ping was sent. A new turn from you resets everything.
 
@@ -21,9 +23,9 @@
 
 ### Cost
 
-Each ping is billed as one cache read of the conversation, plus the fork's few uncached input tokens and its output (including any thinking). A cache read costs 0.1× the base input price on most models. It is lower on some: 0.05× on Claude Opus 5.5 and 0.025× on Claude Fable 5.1.
+A ping is not free. It is billed as one cache read of the conversation, plus the fork's uncached input (its short prompt) and its output, including any thinking. A cache read costs 0.1× the base input price on most models, and less on some: 0.05× on Claude Opus 5.5 and 0.025× on Claude Fable 5.1.
 
-Without the ping, the first turn after the cache expires writes the whole conversation to the cache again. With the 1-hour TTL, that write costs 2× the base input price. Even the full run of 6 pings costs less than that one rewrite.
+Without the ping, the first turn after the cache expires writes the whole conversation to the cache again. With the 1-hour TTL, that write costs 2× the base input price. For a large conversation, a keep-alive read is usually much cheaper than that rewrite. The fork's own input and output costs don't shrink with the conversation, though, so on a small conversation, or after many pings in a row, keeping the cache warm can cost more than letting it expire. That is why `maxPings` caps the run.
 
 ## Usage
 
@@ -55,3 +57,7 @@ claude --plugin-dir ./keep-cache-warm
 claude plugin validate .
 claude plugin test .
 ```
+
+## License
+
+[MIT](LICENSE)
