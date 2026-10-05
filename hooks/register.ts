@@ -3,8 +3,13 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 const MINUTE = 60_000
 // The 1-hour cache entry lapses 60 minutes after the request that last read or
-// wrote it. A ping later than this would pay a full cache write for nothing.
+// wrote it, counted from when that request was sent, not from when its
+// response or the turn finished.
 const TTL_MS = 60 * MINUTE
+// Pings due later than this are skipped: the entry is probably gone, and a
+// ping would pay a full cache write for nothing. The minute of slack covers
+// timer drift and the time the ping request takes to reach the API.
+const LATEST_PING_MS = TTL_MS - MINUTE
 const PING_PROMPT =
   'Automated prompt-cache keep-alive. Do not use tools. Reply with exactly: ok'
 
@@ -42,7 +47,7 @@ async function arm($: EngineInterface) {
     return
   }
   const now = await $.clock.now()
-  if (now - warmedAt >= TTL_MS) {
+  if (now - warmedAt >= LATEST_PING_MS) {
     $.ui.status('cache keep-alive: cache likely cold')
     return
   }
@@ -66,7 +71,7 @@ async function ping($: EngineInterface) {
   const now = await $.clock.now()
   // A late timer (the machine slept) finds the entry already gone: skip
   // rather than pay to rebuild a cache nobody may come back to.
-  if (warmedAt === null || now - warmedAt >= TTL_MS - MINUTE) {
+  if (warmedAt === null || now - warmedAt >= LATEST_PING_MS) {
     $.ui.status('cache keep-alive: cache likely cold')
     return
   }
@@ -101,6 +106,8 @@ async function ping($: EngineInterface) {
     return
   }
 
+  // `now` was read before the fork was sent, so the countdown runs from no
+  // later than the request that refreshed the entry.
   await update($, lastWarmAt, () => now)
   const sent = await update($, pings, n => n + 1)
   $.ui.log(`cache-keepalive: refreshed ${formatTokens(hit)} cached tokens (ping ${sent})`, {
@@ -123,7 +130,8 @@ async function describe($: EngineInterface) {
 }
 
 export const register: Register = (on, options) => {
-  idleMs = Math.min(Math.max(Number(options.idleMinutes ?? 55), 1), 59) * MINUTE
+  // At most 58, so a ping is always due before LATEST_PING_MS.
+  idleMs = Math.min(Math.max(Number(options.idleMinutes ?? 55), 1), 58) * MINUTE
   maxPings = Math.max(Number(options.maxPings ?? 6), 0)
 
   on('session.start', async ($, e, next) => {
@@ -143,12 +151,29 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // Each main-thread request reads or writes the cache when it is sent, so its
+  // send time (taken before the response streams) is when the TTL restarts.
+  // A long response or a long turn therefore can't push the ping past expiry.
+  // Subagent steps send their own prefix and don't warm the main thread's.
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId !== undefined) {
+      return yield* next(e)
+    }
+    const sentAt = await $.clock.now()
+    const result = yield* next(e)
+    const usage = result.usage
+    // No usage means no response arrived, so the entry may not have been
+    // touched; keep the older, safer timestamp.
+    if (usage !== null && usage.cache_read_input_tokens + usage.cache_creation_input_tokens > 0) {
+      await update($, lastWarmAt, () => sentAt)
+    }
+    return result
+  })
+
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId === undefined) {
       isTurnRunning = false
-      const now = await $.clock.now()
-      await update($, lastWarmAt, () => now)
       await update($, pings, () => 0)
       await arm($)
     }
