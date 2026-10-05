@@ -1,0 +1,20 @@
+{
+  "name": "cache-keepalive",
+  "version": "0.1.0",
+  "description": "Keeps the 1-hour prompt cache warm: after ~55 idle minutes it replays the cached prefix with a tiny fork so the next turn doesn't pay a full cache write.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "idleMinutes": {
+      "type": "number",
+      "title": "Ping after idle minutes",
+      "description": "Minutes after the last response before a keep-alive ping is sent. Keep it under the cache TTL (60 for the 1-hour cache).",
+      "default": 55
+    },
+    "maxPings": {
+      "type": "number",
+      "title": "Max consecutive pings",
+      "description": "Keep-alives sent in a row while you are away before giving up (each one re-reads the whole cached prefix). 0 means no limit.",
+      "default": 6
+    }
+  }
+}
