@@ -45,7 +45,14 @@ The status line shows `cache keep-alive: armed (n/6)` while a countdown is runni
 | `idleMinutes` | 55 | Minutes after the last cache-touching request before a ping (clamped to 1–58, so a ping is always due before the 59-minute cutoff) |
 | `maxPings` | 6 | Pings in a row before giving up; `0` means no limit |
 
-## Load it
+## Install it
+
+```sh
+claude plugin marketplace add krika2810/keep-cache-warm
+claude plugin install cache-keepalive@keep-cache-warm
+```
+
+Or load it for one session from a local clone:
 
 ```sh
 claude --plugin-dir ./keep-cache-warm

@@ -196,6 +196,8 @@ export const register: Register = (on, options) => {
       return { text: await describe($) }
     }
     if (arg === 'now') {
+      // Cancel the scheduled ping first, or it fires as well and the cap is exceeded.
+      disarm()
       await ping($)
       return { text: `Keep-alive attempted. ${await describe($)}` }
     }

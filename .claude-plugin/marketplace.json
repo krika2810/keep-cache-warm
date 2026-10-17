@@ -1,0 +1,11 @@
+{
+  "name": "keep-cache-warm",
+  "owner": { "name": "Krishnamurthy" },
+  "plugins": [
+    {
+      "name": "cache-keepalive",
+      "source": "./",
+      "description": "Keeps the 1-hour prompt cache warm: after ~55 idle minutes it replays the cached prefix with a tiny fork so the next turn doesn't pay a full cache write."
+    }
+  ]
+}
